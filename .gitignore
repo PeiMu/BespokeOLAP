@@ -10,6 +10,7 @@ duckdb
 wandb/
 *.png
 *.jpg
+*.duckdb
 
 
 # Byte-compiled / optimized / DLL files

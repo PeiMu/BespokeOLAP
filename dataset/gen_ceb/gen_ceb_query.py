@@ -68,6 +68,47 @@ def _camel_placeholder(column: str, counter: int | None = None) -> str:
     return f"{param_name}{counter}" if counter is not None else param_name
 
 
+def _split_in_list(raw: str) -> list:
+    """Split IN-list content respecting single-quoted values.
+
+    Returns list of str or None (for SQL NULL).
+    """
+    values = []
+    i = 0
+    raw = raw.strip()
+    while i < len(raw):
+        while i < len(raw) and raw[i] in " ,":
+            i += 1
+        if i >= len(raw):
+            break
+        if raw[i] == "'":
+            i += 1
+            val = []
+            while i < len(raw):
+                if raw[i] == "'":
+                    if i + 1 < len(raw) and raw[i + 1] == "'":
+                        val.append("'")
+                        i += 2
+                    else:
+                        i += 1
+                        break
+                else:
+                    val.append(raw[i])
+                    i += 1
+            values.append("".join(val))
+        else:
+            val = []
+            while i < len(raw) and raw[i] not in ",)":
+                val.append(raw[i])
+                i += 1
+            token = "".join(val).strip()
+            if token.upper() == "NULL":
+                values.append(None)
+            else:
+                values.append(token)
+    return values
+
+
 def _extract_literal(line: str) -> Any:
     """Extract literal value(s) from a filter line.
 
@@ -79,7 +120,7 @@ def _extract_literal(line: str) -> Any:
     in_match = IN_LIST_RE.search(line)
     if in_match:
         raw = in_match.group(1)
-        return (tuple(v.strip().strip("'") for v in raw.split(",")), True, False)
+        return (tuple(_split_in_list(raw)), True, False)
 
     # Check for ILIKE patterns
     ilike_match = ILIKE_PATTERN_RE.search(line)

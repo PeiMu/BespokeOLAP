@@ -54,34 +54,51 @@ def _load_foreign_keys(
     try:
         fk_df = con.execute(f"PRAGMA foreign_key_list({_quote_ident(table)})").df()
     except Exception:
-        return []
+        fk_df = None
 
-    if fk_df.empty:
-        return []
+    if fk_df is not None and not fk_df.empty:
+        relationships: List[Tuple[str, List[str], str, List[str]]] = []
+        if "id" in fk_df.columns:
 
-    relationships: List[Tuple[str, List[str], str, List[str]]] = []
-    if "id" in fk_df.columns:
-        grouped = fk_df.groupby("id", sort=False)
-        for _, group in grouped:
-            ref_table = str(group["table"].iloc[0])
-            from_cols = [str(val) for val in group["from"].tolist()]
-            to_cols = [str(val) for val in group["to"].tolist()]
-            relationships.append((table, from_cols, ref_table, to_cols))
-    else:
-        for _, row in fk_df.iterrows():
-            relationships.append(
-                (
-                    table,
-                    [str(row["from"])],
-                    str(row["table"]),
-                    [str(row["to"])],
+            grouped = fk_df.groupby("id", sort=False)
+            for _, group in grouped:
+                ref_table = str(group["table"].iloc[0])
+                from_cols = [str(val) for val in group["from"].tolist()]
+                to_cols = [str(val) for val in group["to"].tolist()]
+                relationships.append((table, from_cols, ref_table, to_cols))
+        else:
+            for _, row in fk_df.iterrows():
+                relationships.append(
+                    (
+                        table,
+                        [str(row["from"])],
+                        str(row["table"]),
+                        [str(row["to"])],
+                    )
                 )
-            )
+        return relationships
 
+    # Fallback: duckdb_constraints() for DuckDB >= 1.2
+    try:
+        rows = con.execute(
+            f"SELECT * FROM duckdb_constraints() "
+            f"WHERE constraint_type='FOREIGN KEY' AND table_name='{table}'"
+        ).fetchall()
+    except Exception:
+        return []
+
+    relationships = []
+    for row in rows:
+        from_cols = list(row[11])
+        ref_table = str(row[13])
+        to_cols = list(row[14])
+        relationships.append((table, from_cols, ref_table, to_cols))
     return relationships
 
 
 def infer_schema_from_duckdb(duckdb_path: str) -> Dict[str, object]:
+    import json as _json
+
     con = duckdb.connect(duckdb_path, read_only=True)
     try:
         tables = _list_tables(con)
@@ -91,6 +108,15 @@ def infer_schema_from_duckdb(duckdb_path: str) -> Dict[str, object]:
         for table in tables:
             table_col_info[table] = _load_table_info(con, table)
             relationships.extend(_load_foreign_keys(con, table))
+
+        # Load companion relationship JSON if DB metadata has no FKs
+        if not relationships:
+            rel_path = duckdb_path.rsplit(".", 1)[0] + ".relationships.json"
+            if os.path.exists(rel_path):
+                _log(f"Loading relationships from {rel_path}")
+                with open(rel_path) as f:
+                    raw = _json.load(f)
+                relationships = [(r[0], r[1], r[2], r[3]) for r in raw]
 
         return {
             "tables": tables,
