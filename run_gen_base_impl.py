@@ -137,7 +137,7 @@ def create_conversation(
     if benchmark == "tpch":
         example_query = "Q42"
         example_query_params = "42"
-    elif benchmark == "ceb":
+    elif benchmark in ("ceb", "job"):
         example_query = "Q42a"
         example_query_params = "42a"
     else:

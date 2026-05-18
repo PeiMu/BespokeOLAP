@@ -94,5 +94,53 @@ def parse_query_ids(
                 queries.append(q)
 
         return queries
+    elif benchmark == "job":
+        from dataset.gen_job.gen_job_query import JOB_QUERY_IDS
+
+        job_query_order = list(JOB_QUERY_IDS)
+
+        def parse_qstr(q: str, is_start: bool) -> str:
+            if len(q) == 1:
+                assert q.isdigit()
+                q = f"0{q}a"
+            elif len(q) == 2:
+                if q[0].isdigit() and q[1].isdigit():
+                    if is_start:
+                        q = f"{q}a"
+                    else:
+                        q = f"{q}z"
+                elif q[0].isdigit() and q[1].isalpha():
+                    q = f"0{q}"
+                else:
+                    raise Exception(f"Could not parse start query {q}")
+            elif len(q) == 3:
+                assert q[0].isdigit() and q[1].isdigit() and q[2].isalpha()
+                pass
+            else:
+                raise Exception(f"Could not parse start query {q}")
+            return q
+
+        start_q = parse_qstr(start_q, is_start=True)
+        end_q = parse_qstr(end_q, is_start=False)
+
+        assert len(start_q) == 3, f"start_q: {start_q}"
+        assert len(end_q) == 3, f"end_q: {end_q}"
+
+        queries = []
+
+        for q in job_query_order:
+            q_str = f"{q}"
+            if len(q) == 2:
+                q_str = "0" + q_str
+
+            assert len(q_str) == 3, f"q_str: {q_str}"
+            assert q_str[0].isdigit() and q_str[1].isdigit() and q_str[2].isalpha(), (
+                f"q_str: {q_str}"
+            )
+
+            if q_str >= start_q and q_str <= end_q:
+                queries.append(q)
+
+        return queries
     else:
         raise ValueError(f"Unknown benchmark: {benchmark}")

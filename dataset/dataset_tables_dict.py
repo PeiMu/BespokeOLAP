@@ -32,6 +32,29 @@ tables_lists = {
         "role_type",
         "title",
     ],
+    "job": [
+        "aka_name",
+        "aka_title",
+        "cast_info",
+        "char_name",
+        "comp_cast_type",
+        "company_name",
+        "company_type",
+        "complete_cast",
+        "info_type",
+        "keyword",
+        "kind_type",
+        "link_type",
+        "movie_companies",
+        "movie_info",
+        "movie_info_idx",
+        "movie_keyword",
+        "movie_link",
+        "name",
+        "person_info",
+        "role_type",
+        "title",
+    ],
 }
 
 
@@ -46,6 +69,8 @@ def get_dataset_name(benchmark: str) -> str:
         return "tpch"
     elif benchmark == "ceb":
         return "imdb"
+    elif benchmark == "job":
+        return "imdb"
     else:
         raise ValueError(f"Unknown benchmark {benchmark}")
 
@@ -56,6 +81,10 @@ def get_benchmark_schema(benchmark: str) -> str:
 
         return tpc_h_schema
     elif benchmark == "ceb":
+        from dataset.gen_ceb.imdb_schema import imdb_schema
+
+        return imdb_schema
+    elif benchmark == "job":
         from dataset.gen_ceb.imdb_schema import imdb_schema
 
         return imdb_schema

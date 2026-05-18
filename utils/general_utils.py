@@ -24,6 +24,10 @@ def write_query_and_args_file(
         benchmark_queries = tpc_h
     elif benchmark_name == "ceb":
         benchmark_queries = ceb_templates
+    elif benchmark_name == "job":
+        from dataset.gen_job.job_queries import job_queries
+
+        benchmark_queries = job_queries
     else:
         raise ValueError(f"Unknown benchmark name: {benchmark_name}")
 
@@ -159,15 +163,15 @@ std::vector<std::string> parse_in_list(std::istringstream& iss) {
 
         std::string value;
         iss >> std::ws;
-        if (iss.peek() == '\'') {
+        if (iss.peek() == '\\'') {
             iss.get();
             while (iss) {
                 const char ch = static_cast<char>(iss.get());
                 if (!iss) break;
-                if (ch == '\'') {
-                    if (iss.peek() == '\'') {
+                if (ch == '\\'') {
+                    if (iss.peek() == '\\'') {
                         iss.get();
-                        value.push_back('\'');
+                        value.push_back('\\'');
                         continue;
                     }
                     break;
@@ -178,8 +182,8 @@ std::vector<std::string> parse_in_list(std::istringstream& iss) {
             while (iss && iss.peek() != ',' && iss.peek() != ')') {
                 value.push_back(static_cast<char>(iss.get()));
             }
-            const auto start = value.find_first_not_of(" \t\r\n");
-            const auto end = value.find_last_not_of(" \t\r\n");
+            const auto start = value.find_first_not_of(" \\t\\r\\n");
+            const auto end = value.find_last_not_of(" \\t\\r\\n");
             if (start == std::string::npos) {
                 value.clear();
             } else {

@@ -3,8 +3,6 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from llm_cache import utils
-
 logger = logging.getLogger(__name__)
 
 CEB_DIR = Path("/mnt/labstore/bespoke_olap/datasets/ceb/imdb")
@@ -20,6 +18,10 @@ def get_query_gen(benchmark: str):
         from dataset.gen_ceb.gen_ceb_query import gen_query_single_only
 
         gen_query_fn = functools.partial(gen_query_single_only, ceb_dir=CEB_DIR)
+    elif benchmark == "job":
+        from dataset.gen_job.gen_job_query import gen_query
+
+        gen_query_fn = gen_query
     else:
         raise ValueError(f"Unknown benchmark: {benchmark}")
 
@@ -44,6 +46,8 @@ def get_placeholders_fn(benchmark: str, cache_dir: Optional[Path] = None):
         # load placeholders from disk
 
         def gen_placeholder_ceb(**kwargs):
+            from llm_cache import utils
+
             # check cache first
             hash_payload = {
                 "benchmark": "ceb",
@@ -82,6 +86,13 @@ def get_placeholders_fn(benchmark: str, cache_dir: Optional[Path] = None):
             return placeholders
 
         gen_fn = gen_placeholder_ceb
+
+    elif benchmark == "job":
+
+        def gen_placeholder_job(**kwargs):
+            return {}
+
+        gen_fn = gen_placeholder_job
 
     else:
         raise ValueError(f"Unknown benchmark: {benchmark}")

@@ -294,6 +294,10 @@ def get_all_query_ids(benchmark: str) -> List[str]:
             "11a",
             "11b",
         ]
+    elif benchmark == "job":
+        from dataset.gen_job.gen_job_query import JOB_QUERY_IDS
+
+        query_ids = list(JOB_QUERY_IDS)
     else:
         raise ValueError(f"Unknown benchmark: {benchmark}")
 

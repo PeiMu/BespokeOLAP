@@ -77,6 +77,8 @@ async def main(args: argparse.Namespace) -> None:
     dataset_version = None
     if args.benchmark == "ceb":
         dataset_version = "3"
+    elif args.benchmark == "job":
+        dataset_version = "1"
 
     snapshotter = GitSnapshotter(
         cache_repo=cache_repo,
