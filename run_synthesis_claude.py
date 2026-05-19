@@ -206,7 +206,12 @@ def claude_call(
     max_turns: Optional[int] = None,
     timeout: int = 1800,
 ) -> str:
-    """Call claude -p and return the text output."""
+    """Call claude -p and return the text output.
+
+    session_id must be a valid UUID (required by claude CLI).
+    First call for a session should set resume=False (uses --session-id to create).
+    Subsequent calls should set resume=True (uses --resume to continue).
+    """
     cmd = ["claude", "-p", prompt, "--permission-mode", "bypassPermissions"]
 
     if session_id:
@@ -224,16 +229,21 @@ def claude_call(
     if max_turns:
         cmd.extend(["--max-turns", str(max_turns)])
 
-    logger.info("Claude call (session=%s, resume=%s, max_turns=%s)", session_id, resume, max_turns)
+    logger.info("Claude call (session=%s, resume=%s, max_turns=%s, timeout=%ds)", session_id, resume, max_turns, timeout)
     logger.info("Prompt: %.300s...", prompt.replace("\n", " "))
 
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        cwd=str(PROJECT_ROOT),
-        timeout=timeout,
-    )
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=str(PROJECT_ROOT),
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as e:
+        logger.warning("Claude call timed out after %ds. Partial output may have been written to files.", timeout)
+        partial = (e.stdout or b"").decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
+        return f"TIMEOUT after {timeout}s. Partial: {partial[:500]}"
 
     if result.returncode != 0:
         logger.error("claude -p failed (rc=%d): %s", result.returncode, result.stderr[:1000])
@@ -563,7 +573,7 @@ Do not execute the steps yet."""
     prompt_build = f"finish all todos. Focus on the build logic to convert ArrowTable into an efficient in-memory data structure ({builder_path}). For now use stubs for the query execution logic in {query_impl_path}."
 
     logger.info("=== Base: Implement Builder ===")
-    claude_call(prompt_build, session_id=session_id, resume=True, timeout=1200)
+    claude_call(prompt_build, session_id=session_id, resume=True, timeout=7200)
 
     # --- Prompt 3: Compile and test ---
     if sf_verify_str == str(max_sf):
@@ -572,13 +582,13 @@ Do not execute the steps yet."""
         prompt_compile = f"Execute and check termination without error. First call the compile tool, then check the run tool (scalefactors {sf_verify_str} and also {max_sf}). If there are errors, fix the implementation accordingly."
 
     logger.info("=== Base: Compile & Test ===")
-    claude_call(prompt_compile, session_id=session_id, resume=True, timeout=600)
+    claude_call(prompt_compile, session_id=session_id, resume=True, timeout=3600)
 
     # --- Prompt 4: Add time measurement ---
     prompt_timing = 'add time measurement for execution. Exclude the csv output writing from the timing. Print/Output: once after each execution: "<RUN_NR> | Execution ms: YYY".'
 
     logger.info("=== Base: Add Timing ===")
-    claude_call(prompt_timing, session_id=session_id, resume=True, timeout=600)
+    claude_call(prompt_timing, session_id=session_id, resume=True, timeout=1800)
 
     # --- Per-query implement + validate loop ---
     for i, qid in enumerate(query_ids):
@@ -593,25 +603,25 @@ Do not execute the steps yet."""
         prompt_impl = f"{prefix} query {qid}. Create a separate file for the implementation of this query. Do not print file contents after you are done.{sample_args_str}"
 
         logger.info("=== Base: Implement Q%s (%d/%d) ===", qid, i + 1, len(query_ids))
-        claude_call(prompt_impl, session_id=session_id, resume=True, timeout=1200)
+        claude_call(prompt_impl, session_id=session_id, resume=True, timeout=3600)
 
         # Check correctness
         prompt_check = f'Execute and check correctness by using the run tool. Run with query_id "{qid}" and scale_factor {sf_verify_str}. If there are errors, fix the implementation accordingly.'
 
         logger.info("=== Base: Validate Q%s ===", qid)
-        claude_call(prompt_check, session_id=session_id, resume=True, timeout=600)
+        claude_call(prompt_check, session_id=session_id, resume=True, timeout=3600)
 
     # --- Final correctness check ---
     prompt_final_check = f"Check correctness of the output of all queries by using the run tool. Run with scale_factor {sf_verify_str}. Call the run tool once for all queries together. If there are errors, fix the implementation accordingly."
 
     logger.info("=== Base: Final Correctness Check ===")
-    claude_call(prompt_final_check, session_id=session_id, resume=True, timeout=600)
+    claude_call(prompt_final_check, session_id=session_id, resume=True, timeout=3600)
 
     # --- Benchmark at max scale factor ---
     prompt_benchmark = f"Call the run tool with scale_factor {max_sf}. Benchmark the execution time of all queries. Fix any error if occurs."
 
     logger.info("=== Base: Benchmark at SF=%s ===", max_sf)
-    claude_call(prompt_benchmark, session_id=session_id, resume=True, timeout=600)
+    claude_call(prompt_benchmark, session_id=session_id, resume=True, timeout=3600)
 
     # --- Optimize build time ---
     if sf_verify_str == str(max_sf):
@@ -620,7 +630,7 @@ Do not execute the steps yet."""
         prompt_optim_build = f"Optimize the build implementation. You should reduce build time to below 10 seconds for scale factor {max_sf}. Use multithreading, and make build as fast as duckdb. Run the implementation with scale_factor {sf_verify_str} to check for correctness and measure speedup build time with scale_factor {max_sf}."
 
     logger.info("=== Base: Optimize Build ===")
-    claude_call(prompt_optim_build, session_id=session_id, resume=True, timeout=1200)
+    claude_call(prompt_optim_build, session_id=session_id, resume=True, timeout=3600)
 
     # Save snapshot after base implementation
     save_snapshot("base_done")
@@ -690,7 +700,7 @@ def phase_optimize(query_ids: List[str], session_id: str, bespoke_storage: bool 
             full_prompt = per_query_prompt
 
         logger.info("=== Optim: Add Timings for %s ===", qids_str)
-        claude_call(full_prompt, session_id=session_id, resume=True, timeout=900)
+        claude_call(full_prompt, session_id=session_id, resume=True, timeout=3600)
 
         # Check correctness with both trace=False and trace=True
         for trace_mode in [False, True]:
@@ -816,7 +826,7 @@ def phase_optimize(query_ids: List[str], session_id: str, bespoke_storage: bool 
             full_prompt = pretext_optim + "\n" + stage_prompt
 
             # Use a separate session per query per stage for conversation branching
-            query_session_id = f"{session_id}-{stage_name}-{qid}"
+            query_session_id = str(uuid.uuid4())
 
             logger.info("  Current runtime: %.1f ms. Running optimization...", impl_rt_ms)
 
@@ -825,7 +835,7 @@ def phase_optimize(query_ids: List[str], session_id: str, bespoke_storage: bool 
                 session_id=query_session_id,
                 system_prompt=sys_prompt,
                 max_turns=max_turns,
-                timeout=2400,
+                timeout=7200,
             )
 
             # Measure performance after optimization
@@ -863,7 +873,7 @@ def phase_optimize(query_ids: List[str], session_id: str, bespoke_storage: bool 
                     logger.error("  Reverted version is also incorrect! Asking Claude to fix...")
                     claude_call(
                         f"I rolled back your changes since the output was not correct. But after rollback, the results are still wrong. Please re-evaluate your implementation of query {qid} and make sure that it produces correct results!",
-                        session_id=query_session_id, resume=True, timeout=600,
+                        session_id=query_session_id, resume=True, timeout=3600,
                     )
 
             # Clean up result CSVs
@@ -960,29 +970,30 @@ def main():
     elif "base" in phases or "storage" in phases:
         setup_workspace(query_ids)
 
-    session_id = args.session_id or str(uuid.uuid4())
-    logger.info("Session ID: %s", session_id)
-
     bespoke_storage = args.with_storage_plan
 
     if "storage" in phases:
         logger.info("=" * 60)
         logger.info("=== STAGE 1: Storage Plan Generation ===")
         logger.info("=" * 60)
-        phase_storage_plan(query_ids, session_id)
+        storage_session = args.session_id or str(uuid.uuid4())
+        logger.info("Storage session ID: %s", storage_session)
+        phase_storage_plan(query_ids, storage_session)
 
     if "base" in phases:
         logger.info("=" * 60)
         logger.info("=== STAGE 2: Base Implementation ===")
         logger.info("=" * 60)
-        base_session = f"{session_id}-base"
+        base_session = args.session_id or str(uuid.uuid4())
+        logger.info("Base session ID: %s", base_session)
         phase_base_impl(query_ids, base_session, with_storage_plan=bespoke_storage)
 
     if "optimize" in phases:
         logger.info("=" * 60)
         logger.info("=== STAGE 3: Optimization Loop (4 sub-stages) ===")
         logger.info("=" * 60)
-        optim_session = f"{session_id}-optim"
+        optim_session = args.session_id or str(uuid.uuid4())
+        logger.info("Optim session ID: %s", optim_session)
         phase_optimize(query_ids, optim_session, bespoke_storage=bespoke_storage)
 
     logger.info("=" * 60)

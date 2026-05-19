@@ -73,12 +73,18 @@ class DuckDBConnectionManager:
     ) -> duckdb.DuckDBPyConnection:
         # pre-load duckdb tables to warm up cache
         self.con = duckdb.connect(database=":memory:")
+        sf_subdir = os.path.join(parquet_path, f"sf{sf}")
+        use_sf_subdir = os.path.isdir(sf_subdir)
         for table in tqdm(
             get_tables_for_benchmark(benchmark),
             desc=f"Loading DuckDB tables for SF{sf}",
         ):
+            if use_sf_subdir:
+                pq = f"{parquet_path}/sf{sf}/{table}.parquet"
+            else:
+                pq = f"{parquet_path}/{table}.parquet"
             self.con.execute(
-                f"CREATE TABLE {table} AS SELECT * FROM read_parquet('{parquet_path}/sf{sf}/{table}.parquet')"
+                f"CREATE TABLE {table} AS SELECT * FROM read_parquet('{pq}')"
             )
 
         # disable parallelism in duckdb for more consistent benchmarking

@@ -4,7 +4,18 @@
 
 Reproduces BespokeOLAP's LLM synthesis pipeline for the Join Order Benchmark (JOB): all 113 queries on the vanilla IMDB dataset, using Claude Code CLI (`claude -p`) as the LLM backend.
 
-The original pipeline (`run_gen_storage_plan.py` → `run_gen_base_impl.py` → `run_optim_loop.py`) uses the OpenAI Agents SDK. We replace the LLM backend with `claude -p` while keeping the same prompts, conversation structure, and optimization stages.
+The original pipeline (`run_gen_storage_plan.py` -> `run_gen_base_impl.py` -> `run_optim_loop.py`) uses the OpenAI Agents SDK. We replace the LLM backend with `claude -p` while keeping the same prompts, conversation structure, and optimization stages.
+
+## Quick Start
+
+Activate the environment and run the reproduction script:
+
+```bash
+source .venv/bin/activate
+bash reproduction_claude.sh
+```
+
+This runs the full pipeline end-to-end: data preparation, 3-stage LLM synthesis, and evaluation. The rest of this document explains each step in detail.
 
 ## Pipeline
 
@@ -16,9 +27,9 @@ The original pipeline (`run_gen_storage_plan.py` → `run_gen_base_impl.py` → 
 
 Stage 3 runs 4 sub-stages per query (from `OptimizationConversation._build_stages()`):
 1. **sample_plan** — DuckDB EXPLAIN ANALYZE guided
-2. **trace** — trace-based profiling (`-DTRACE`), target 10× speedup
-3. **expert_knowledge** — 19 optimization principles, target 2× speedup
-4. **human_reference** — Thomas Neumann style, target 2× speedup
+2. **trace** — trace-based profiling (`-DTRACE`), target 10x speedup
+3. **expert_knowledge** — 19 optimization principles, target 2x speedup
+4. **human_reference** — Thomas Neumann style, target 2x speedup
 
 All prompts are loaded verbatim from `conversations/prompts/*.txt`.
 
@@ -31,17 +42,20 @@ JOB uses the vanilla IMDB dataset (no scale factors). The CSV files are at `~/Pr
 - Linux x86-64
 - GCC with C++20 support
 - `libarrow-dev`, `libparquet-dev`
-- Python 3.10+ with `duckdb`, `pyarrow`
+- Python virtual environment at `.venv/` with `duckdb`
 - Claude Code CLI (`claude`) on PATH
 - IMDB CSV files at `~/Project/benchmarks/imdb_job-postgres/csv/`
 - JOB SQL files at `~/Project/benchmarks/imdb_job-postgres/queries/`
 
-## Step 1: Prepare Data
+## Step-by-Step Explanation
+
+The following sections explain what `reproduction_claude.sh` does at each step.
+
+### Step 1: Prepare Data
 
 Convert IMDB CSV files to DuckDB and Parquet.
 
 ```bash
-cd /home/pei/Project/BespokeOLAP
 python benchmark/job/prepare_data.py
 ```
 
@@ -49,7 +63,7 @@ Output:
 - `benchmark/job/imdb.duckdb`
 - `benchmark/job/imdb_parquet/*.parquet` (21 tables)
 
-## Step 2: LLM Synthesis
+### Step 2: LLM Synthesis
 
 Run the full 3-stage pipeline. Claude Code CLI generates the C++ engine code in `output/`.
 
@@ -76,7 +90,7 @@ python run_synthesis_claude.py --phase base --with-storage-plan
 python run_synthesis_claude.py --phase optimize --with-storage-plan --resume-from-snapshot base_done
 ```
 
-## Step 3: Evaluate
+### Step 3: Evaluate
 
 After synthesis completes, evaluate the generated engine against DuckDB.
 
@@ -132,7 +146,7 @@ python benchmark/job/aggregate_results.py
 - `synthesis/compile_and_run.py` — compile/run/validate/snapshot helper for Claude
 
 **Benchmark evaluation (new, in `benchmark/job/`):**
-- `prepare_data.py` — CSV → DuckDB → Parquet
+- `prepare_data.py` — CSV -> DuckDB -> Parquet
 - `build_bespoke.sh` — compiles synthesized C++ from `output/`
 - `verify_correctness.py` — compares output against DuckDB
 - `measure_duckdb.py` — DuckDB baseline timing
@@ -150,6 +164,7 @@ python benchmark/job/aggregate_results.py
 - `dataset/query_gen_factory.py` — added `"job"` branches
 - `dataset/dataset_tables_dict.py` — added `"job"` (same 21 IMDB tables)
 - `tools/validate_tool/sf_list_gen.py` — added `"job"` config
+- `tools/validate_tool/duckdb_connection_manager.py` — support flat parquet dir (no `sf{sf}/` subdir)
 - `utils/gen_common.py` — added JOB query ID parser
 - `utils/general_utils.py` — added `"job"` to query file writer
 

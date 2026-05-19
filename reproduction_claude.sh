@@ -9,12 +9,15 @@
 #            4 sub-stages per query: sample_plan, trace, expert_knowledge, human_reference
 #
 # LLM backend: Claude Code CLI (`claude -p`) instead of OpenAI Agents SDK
-# Benchmark: JOB (Join Order Benchmark) — 33 queries (1a–33a) on IMDB dataset
+# Benchmark: JOB (Join Order Benchmark) — all 113 queries on vanilla IMDB dataset
 # Dataset: ~/Project/benchmarks/imdb_job-postgres/
 # =============================================================================
 
 set -euo pipefail
 cd /home/pei/Project/BespokeOLAP
+
+# Activate Python environment (has duckdb, pyarrow, etc.)
+source /home/pei/Project/BespokeOLAP/.venv/bin/activate
 
 # =============================================================================
 # Prerequisites
@@ -25,7 +28,7 @@ cd /home/pei/Project/BespokeOLAP
 # - Python 3.10+ with: duckdb, pyarrow
 # - Claude Code CLI (`claude`) on PATH
 # - IMDB CSV files at ~/Project/benchmarks/imdb_job-postgres/csv/ (21 tables, ~3.8GB)
-# - IMDB SQL files at ~/Project/benchmarks/imdb_job-postgres/queries/ (113 files)
+# - JOB SQL files at ~/Project/benchmarks/imdb_job-postgres/queries/ (113 files)
 
 # =============================================================================
 # Step 0: Verify prerequisites
@@ -35,7 +38,6 @@ echo "=== Step 0: Verify prerequisites ==="
 claude --version || { echo "ERROR: claude CLI not found. Install Claude Code first."; exit 1; }
 
 python -c "import duckdb; print(f'DuckDB {duckdb.__version__}')"
-python -c "import pyarrow; print(f'PyArrow {pyarrow.__version__}')"
 
 test -d ~/Project/benchmarks/imdb_job-postgres/csv/ || { echo "ERROR: IMDB CSV not found"; exit 1; }
 test -d ~/Project/benchmarks/imdb_job-postgres/queries/ || { echo "ERROR: JOB SQL not found"; exit 1; }
@@ -43,50 +45,19 @@ test -d ~/Project/benchmarks/imdb_job-postgres/queries/ || { echo "ERROR: JOB SQ
 echo "All prerequisites OK."
 
 # =============================================================================
-# Step 1: Prepare scaled parquet data
+# Step 1: Prepare data (CSV -> DuckDB -> Parquet)
 # =============================================================================
-# BespokeOLAP validates at SF=0.25 and SF=0.5, benchmarks at SF=2.
-# CEB reproduction already created imdb.duckdb and sf2 parquet.
-# We need sf0.25 and sf0.5 additionally.
-echo "=== Step 1: Prepare scaled parquet data ==="
+# JOB uses the vanilla IMDB dataset (no scale factors).
+echo "=== Step 1: Prepare data ==="
 
-DUCKDB_PATH="benchmark/ceb/imdb.duckdb"
-PARQUET_BASE="benchmark/ceb/imdb_parquet"
-
-# Create imdb.duckdb from CSV if not exists (reuse from CEB reproduction)
-if [ ! -f "$DUCKDB_PATH" ]; then
-    echo "Creating imdb.duckdb from CSV files..."
-    python benchmark/ceb/prepare_data.py
+if [ ! -f "benchmark/job/imdb_parquet/title.parquet" ]; then
+    echo "Converting IMDB CSV to Parquet..."
+    python benchmark/job/prepare_data.py
+else
+    echo "Parquet data already exists."
 fi
 
-# Scale down to SF=0.25
-if [ ! -d "$PARQUET_BASE/sf0.25" ]; then
-    echo "Generating SF=0.25 parquet..."
-    python -m dataset.custom_scaler.scale_parquet \
-        --duckdb "$DUCKDB_PATH" \
-        --output-dir "$PARQUET_BASE" \
-        --scale 0.25
-fi
-
-# Scale down to SF=0.5
-if [ ! -d "$PARQUET_BASE/sf0.5" ]; then
-    echo "Generating SF=0.5 parquet..."
-    python -m dataset.custom_scaler.scale_parquet \
-        --duckdb "$DUCKDB_PATH" \
-        --output-dir "$PARQUET_BASE" \
-        --scale 0.5
-fi
-
-# Scale up to SF=2 (should already exist from CEB reproduction)
-if [ ! -d "$PARQUET_BASE/sf2" ]; then
-    echo "Generating SF=2 parquet..."
-    python -m dataset.custom_scaler.scale_parquet \
-        --duckdb "$DUCKDB_PATH" \
-        --output-dir "$PARQUET_BASE" \
-        --scale 2
-fi
-
-echo "Parquet data ready: sf0.25, sf0.5, sf2"
+echo "Data ready at benchmark/job/imdb_parquet/"
 
 # =============================================================================
 # Step 2: Run full synthesis pipeline
@@ -94,9 +65,9 @@ echo "Parquet data ready: sf0.25, sf0.5, sf2"
 # This calls `claude -p` in a scripted loop, mirroring the original pipeline:
 #   - Stage 1: Storage plan (creative in-memory layout design)
 #   - Stage 2: Base implementation (builder + per-query C++ code + validation)
-#   - Stage 3: Optimization (4 stages × 33 queries with regression rollback)
+#   - Stage 3: Optimization (4 stages x 113 queries with regression rollback)
 #
-# Total estimated time: many hours (33 queries × 4 optimization stages)
+# Total estimated time: many hours (113 queries x 4 optimization stages)
 # Total estimated cost: significant Claude API usage
 
 echo "=== Step 2: Run synthesis pipeline ==="
@@ -113,26 +84,16 @@ python run_synthesis_claude.py \
 # python run_synthesis_claude.py --phase optimize --with-storage-plan --resume-from-snapshot base_done
 
 # Option C: Run for a subset of queries first (for testing)
-# python run_synthesis_claude.py --queries 1a,2a,3a --phase all --with-storage-plan --clean
+# python run_synthesis_claude.py --queries 1a,1b,1c,1d,2a --phase all --with-storage-plan --clean
 
 # =============================================================================
-# Step 3: Verify correctness
+# Step 3: Evaluate (build, verify, benchmark)
 # =============================================================================
-echo "=== Step 3: Verify correctness ==="
+echo "=== Step 3: Evaluate ==="
 
-# Check all 33 queries produce correct output at SF=0.25 and SF=0.5
-python synthesis/compile_and_run.py check-correctness --sf 0.25
-python synthesis/compile_and_run.py check-correctness --sf 0.5
+bash benchmark/job/run_all.sh
 
-echo "Correctness verification complete."
-
-# =============================================================================
-# Step 4: Final benchmark at SF=2
-# =============================================================================
-echo "=== Step 4: Final benchmark ==="
-
-python synthesis/compile_and_run.py run --sf 2 --optimize
-
-echo "=== Synthesis complete ==="
+echo "=== Reproduction complete ==="
 echo "Workspace: output/"
 echo "Snapshots: output/.snapshots/"
+echo "Results: benchmark/job/results/summary.csv"
