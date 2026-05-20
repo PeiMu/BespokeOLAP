@@ -751,6 +751,7 @@ def phase_optimize(query_ids: List[str], session_id: str, bespoke_storage: bool 
                 duckdb_plan=duckdb_plans.get(qid, ""), sf=benchmark_sf,
             ),
             "max_turns": None,
+            "target_factor": None,
         },
         {
             "name": "trace",
@@ -760,6 +761,7 @@ def phase_optimize(query_ids: List[str], session_id: str, bespoke_storage: bool 
                 factor=10, storage_is_bespoke=bespoke_storage,
             ),
             "max_turns": 125,
+            "target_factor": 10,
         },
         {
             "name": "expert_knowledge",
@@ -770,6 +772,7 @@ def phase_optimize(query_ids: List[str], session_id: str, bespoke_storage: bool 
                 storage_is_bespoke=bespoke_storage,
             ),
             "max_turns": 150,
+            "target_factor": 2,
         },
         {
             "name": "human_reference",
@@ -779,6 +782,7 @@ def phase_optimize(query_ids: List[str], session_id: str, bespoke_storage: bool 
                 storage_is_bespoke=bespoke_storage,
             ),
             "max_turns": 125,
+            "target_factor": 2,
         },
     ]
 
@@ -818,6 +822,27 @@ def phase_optimize(query_ids: List[str], session_id: str, bespoke_storage: bool 
             else:
                 impl_rt_ms = 10000.0
 
+            # Skip if the gap between current and target runtime is < 1 ms
+            target_factor = stage.get("target_factor")
+            if target_factor is not None:
+                target_rt_ms = impl_rt_ms / target_factor
+                gap_ms = impl_rt_ms - target_rt_ms
+                if gap_ms < 1.0:
+                    logger.info(
+                        "  Q%s | Stage '%s': SKIPPED (gap %.2f ms < 1 ms, current=%.1f ms, target=%.1f ms)",
+                        qid, stage_name, gap_ms, impl_rt_ms, target_rt_ms,
+                    )
+                    delete_result_csvs()
+                    continue
+            else:
+                if impl_rt_ms < 1.0:
+                    logger.info(
+                        "  Q%s | Stage '%s': SKIPPED (current runtime %.2f ms already < 1 ms)",
+                        qid, stage_name, impl_rt_ms,
+                    )
+                    delete_result_csvs()
+                    continue
+
             # Also run with trace to have fresh stats
             run_engine(sf=benchmark_sf, query_ids=[qid], optimize=True, trace=True)
 
@@ -850,7 +875,7 @@ def phase_optimize(query_ids: List[str], session_id: str, bespoke_storage: bool 
             # Check correctness
             correct_after, _ = check_correctness(sf=benchmark_sf, query_ids=[qid])
 
-            improved = correct_after and rt_after_ms < impl_rt_ms
+            improved = correct_after and (impl_rt_ms - rt_after_ms) >= 1.0
 
             if improved:
                 query_rt_log[qid] = rt_after_ms / 1000.0

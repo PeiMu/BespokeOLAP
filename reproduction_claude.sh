@@ -72,11 +72,11 @@ echo "Data ready at benchmark/job/imdb_parquet/"
 
 echo "=== Step 2: Run synthesis pipeline ==="
 
-# Option A: Full pipeline with storage plan (recommended, matches paper)
-python run_synthesis_claude.py \
-    --phase all \
-    --with-storage-plan \
-    --clean
+## Option A: Full pipeline with storage plan (recommended, matches paper)
+#python run_synthesis_claude.py \
+#    --phase all \
+#    --with-storage-plan \
+#    --clean
 
 # Option B: Run phases separately (useful for resuming after failures)
 # python run_synthesis_claude.py --phase storage --with-storage-plan --clean
@@ -84,7 +84,7 @@ python run_synthesis_claude.py \
 # python run_synthesis_claude.py --phase optimize --with-storage-plan --resume-from-snapshot base_done
 
 # Option C: Run for a subset of queries first (for testing)
-# python run_synthesis_claude.py --queries 1a,1b,1c,1d,2a --phase all --with-storage-plan --clean
+python run_synthesis_claude.py --queries 16b,7c,10c,8c,6f,31c,25a,30c --phase all --with-storage-plan --clean
 
 # =============================================================================
 # Step 3: Evaluate (build, verify, benchmark)
