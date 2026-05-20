@@ -113,7 +113,7 @@ Or run steps individually:
 bash benchmark/job/build_bespoke.sh
 
 # Verify correctness (113 queries)
-python benchmark/job/verify_correctness.py
+bash benchmark/job/check_correctness.sh
 
 # DuckDB baseline
 python benchmark/job/measure_duckdb.py
@@ -127,6 +127,20 @@ python benchmark/job/measure_bespoke_cold.py
 # Aggregate results
 python benchmark/job/aggregate_results.py
 ```
+
+### Hyperfine Benchmark
+
+Measure total wall time of all queries using hyperfine (5 warmup, 10 measured runs):
+
+```bash
+# Cold: includes data loading + build + execution per invocation
+bash benchmark/job/bench_hyperfine.sh
+
+# Warm: pre-loads data, measures execution only
+bash benchmark/job/bench_hyperfine.sh --warm
+```
+
+Results are saved to `benchmark/job/results/hyperfine_bespoke_{cold,warm}.{json,md}`.
 
 ## Output
 
@@ -148,10 +162,13 @@ python benchmark/job/aggregate_results.py
 **Benchmark evaluation (new, in `benchmark/job/`):**
 - `prepare_data.py` — CSV -> DuckDB -> Parquet
 - `build_bespoke.sh` — compiles synthesized C++ from `output/`
-- `verify_correctness.py` — compares output against DuckDB
+- `check_correctness.sh` — builds if needed, verifies all queries against DuckDB
+- `verify_correctness.py` — compares output against DuckDB (called by check_correctness.sh)
 - `measure_duckdb.py` — DuckDB baseline timing
 - `measure_bespoke_warm.py` — Bespoke execution timing
 - `measure_bespoke_cold.py` — Bespoke compile + execution timing
+- `run_once.py` — single execution wrapper (used by hyperfine)
+- `bench_hyperfine.sh` — hyperfine benchmark (5 warmup, 10 runs, cold/warm modes)
 - `aggregate_results.py` — combines all results
 - `run_all.sh` — runs all evaluation steps
 
