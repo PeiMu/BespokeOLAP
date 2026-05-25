@@ -642,7 +642,7 @@ Do not execute the steps yet."""
 # (mirrors OptimizationConversation.run() from optimization_conversation.py)
 # ---------------------------------------------------------------------------
 
-def phase_optimize(query_ids: List[str], session_id: str, bespoke_storage: bool = True) -> None:
+def phase_optimize(query_ids: List[str], session_id: str, bespoke_storage: bool = True, stages: Optional[List[str]] = None) -> None:
     _gen_sf = _safe_import_sf_list_gen()
     verify_sf_list, max_sf = _gen_sf(BENCHMARK)
     benchmark_sf = max_sf
@@ -785,6 +785,15 @@ def phase_optimize(query_ids: List[str], session_id: str, bespoke_storage: bool 
             "target_factor": 2,
         },
     ]
+
+    if stages:
+        all_stage_names = [s["name"] for s in stage_configs]
+        for s in stages:
+            if s not in all_stage_names:
+                logger.error("Unknown stage '%s'. Available: %s", s, all_stage_names)
+                sys.exit(1)
+        stage_configs = [s for s in stage_configs if s["name"] in stages]
+        logger.info("Running optimization stages: %s", [s["name"] for s in stage_configs])
 
     # Collect initial runtime for all queries
     logger.info("=== Optim: Initial Benchmark ===")
@@ -955,6 +964,11 @@ def main():
         help="Restore a snapshot before starting (e.g., 'base_done' to skip base impl)",
     )
     parser.add_argument(
+        "--stages", type=str, default=None,
+        help="Comma-separated optimization sub-stages to run (default: all). "
+             "Available: sample_plan, trace, expert_knowledge, human_reference",
+    )
+    parser.add_argument(
         "--session-id", type=str, default=None,
         help="Explicit session ID (default: auto-generated UUID)",
     )
@@ -1019,7 +1033,8 @@ def main():
         logger.info("=" * 60)
         optim_session = args.session_id or str(uuid.uuid4())
         logger.info("Optim session ID: %s", optim_session)
-        phase_optimize(query_ids, optim_session, bespoke_storage=bespoke_storage)
+        opt_stages = [s.strip() for s in args.stages.split(",")] if args.stages else None
+        phase_optimize(query_ids, optim_session, bespoke_storage=bespoke_storage, stages=opt_stages)
 
     logger.info("=" * 60)
     logger.info("=== Synthesis Complete ===")

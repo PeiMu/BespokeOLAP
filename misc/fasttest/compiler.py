@@ -88,7 +88,7 @@ class Compiler:
         ]
         self.include_flags = self._normalize_include_dirs(self.include_dirs)
         self.cxxflags = self._make_cxxflags(self.extra_cxxflags)
-        self.ldflags = ["-shared", "-Wl,--build-id=sha1", "-Wl,--no-undefined"]
+        self.ldflags = ["-shared", "-Wl,--build-id=sha1", "-Wl,--no-undefined", "-pthread"]
         self.pkg_cflags: list[str] = []
         self.pkg_libs: list[str] = []
         if self.pkgconfig_libs:

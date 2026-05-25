@@ -174,8 +174,18 @@ def force_recompile(build_dir):
     subprocess.run(
         f"{cxx} {cxxflags} {pkg_cflags} -c {job_src}/query_impl.cpp -o {obj_dir}/query_impl.o",
         shell=True, check=True, capture_output=True)
+
+    query_objs = f"{obj_dir}/query_api.o {obj_dir}/query_impl.o"
+    for qsrc in sorted(job_src.glob("query_q*.cpp")):
+        obj_name = qsrc.stem + ".o"
+        obj_path = obj_dir / obj_name
+        subprocess.run(
+            f"{cxx} {cxxflags} {pkg_cflags} -c {qsrc} -o {obj_path}",
+            shell=True, check=True, capture_output=True)
+        query_objs += f" {obj_path}"
+
     subprocess.run(
-        f"{cxx} {ldflags_so} -o {build_dir}/libquery.so {obj_dir}/query_api.o {obj_dir}/query_impl.o {pkg_libs}",
+        f"{cxx} {ldflags_so} -o {build_dir}/libquery.so {query_objs} {pkg_libs}",
         shell=True, check=True, capture_output=True)
 
 
@@ -238,7 +248,8 @@ def main():
 
     with open(output_path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["query", "median_ms", "mean_ms", "stddev_ms",
+        writer.writerow(["query", "cold_median_ms", "cold_mean_ms", "cold_stddev_ms",
+                         "exec_median_ms", "exec_mean_ms", "exec_stddev_ms",
                          "compile_median_ms", "compile_mean_ms"] +
                         [f"run_{i+1}" for i in range(MEASURED_RUNS)])
 
@@ -247,6 +258,11 @@ def main():
         print(f"\n  Compile overhead: median={compile_median:.1f}ms mean={compile_mean:.1f}ms")
 
         for qi, qname in enumerate(query_lines):
+            exec_times = [
+                all_exec_timings[r][qi]
+                for r in range(MEASURED_RUNS)
+                if qi < len(all_exec_timings[r])
+            ]
             cold_timings = [
                 all_compile_times[r] + all_exec_timings[r][qi]
                 for r in range(MEASURED_RUNS)
@@ -256,14 +272,20 @@ def main():
             if not cold_timings:
                 continue
 
-            median_ms = statistics.median(cold_timings)
-            mean_ms = statistics.mean(cold_timings)
-            stddev_ms = statistics.stdev(cold_timings) if len(cold_timings) > 1 else 0.0
+            cold_median = statistics.median(cold_timings)
+            cold_mean = statistics.mean(cold_timings)
+            cold_stddev = statistics.stdev(cold_timings) if len(cold_timings) > 1 else 0.0
 
-            writer.writerow([qname, round(median_ms, 3), round(mean_ms, 3), round(stddev_ms, 3),
+            exec_median = statistics.median(exec_times)
+            exec_mean = statistics.mean(exec_times)
+            exec_stddev = statistics.stdev(exec_times) if len(exec_times) > 1 else 0.0
+
+            writer.writerow([qname,
+                             round(cold_median, 3), round(cold_mean, 3), round(cold_stddev, 3),
+                             round(exec_median, 3), round(exec_mean, 3), round(exec_stddev, 3),
                              round(compile_median, 3), round(compile_mean, 3)] +
                             [round(t, 3) for t in cold_timings])
-            print(f"    {qname}: cold_median={median_ms:.1f}ms")
+            print(f"    {qname}: cold={cold_median:.1f}ms exec={exec_median:.3f}ms")
 
     print(f"\nResults written to {output_path}")
 

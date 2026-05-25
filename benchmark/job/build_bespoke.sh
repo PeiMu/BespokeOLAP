@@ -36,6 +36,14 @@ compile_obj "$API_DIR/builder_api.cpp"
 compile_obj "$JOB_SRC/builder_impl.cpp"
 compile_obj "$API_DIR/query_api.cpp"
 compile_obj "$JOB_SRC/query_impl.cpp"
+
+QUERY_OBJS=""
+for qsrc in "$JOB_SRC"/query_q*.cpp; do
+    [ -f "$qsrc" ] || continue
+    compile_obj "$qsrc"
+    QUERY_OBJS="$QUERY_OBJS $BUILD_DIR/obj/$(basename "${qsrc%.cpp}.o")"
+done
+
 compile_obj "$API_DIR/db.cpp"
 compile_obj "$API_DIR/utils/build_id.cpp"
 
@@ -51,7 +59,7 @@ $CXX $LDFLAGS_SO -o "$BUILD_DIR/libbuilder.so" \
 
 echo "  LINK libquery.so"
 $CXX $LDFLAGS_SO -o "$BUILD_DIR/libquery.so" \
-    "$BUILD_DIR/obj/query_api.o" "$BUILD_DIR/obj/query_impl.o" \
+    "$BUILD_DIR/obj/query_api.o" "$BUILD_DIR/obj/query_impl.o" $QUERY_OBJS \
     $PKG_LIBS
 
 echo "  LINK db"

@@ -146,7 +146,7 @@ def _resolve_parquet_dir(sf: float, benchmark: str = "job", parquet_dir: Optiona
 
 
 def make_compiler(optimize: bool = True, trace: bool = False) -> Compiler:
-    cxx_flags = []
+    cxx_flags = ["-pthread"]
     if optimize:
         cxx_flags.extend(["-O3", "-flto"])
     if trace:
@@ -276,6 +276,27 @@ def do_run(args):
     print(f"\nJSON: {json.dumps(result)}")
 
 
+def _values_match(row1, row2, tol=0.01):
+    """Compare two CSV rows, tolerating float differences and quote normalization."""
+    if len(row1) != len(row2):
+        return False
+    for v1, v2 in zip(row1, row2):
+        if v1 == v2:
+            continue
+        v1n = v1.replace('\\"', '"').replace('\\\\', '\\')
+        v2n = v2.replace('\\"', '"').replace('\\\\', '\\')
+        if v1n == v2n:
+            continue
+        try:
+            f1, f2 = float(v1), float(v2)
+            if abs(f1 - f2) <= tol * max(abs(f1), abs(f2), 1.0):
+                continue
+        except (ValueError, TypeError):
+            pass
+        return False
+    return True
+
+
 def do_check_correctness(args):
     """Compile, run, and compare output CSVs against DuckDB ground truth."""
     query_ids = args.query or list(JOB_QUERY_IDS)
@@ -330,16 +351,44 @@ def do_check_correctness(args):
         duckdb_rows = len(duckdb_result) if duckdb_result is not None else 0
         impl_data_rows = len(impl_rows) - 1 if impl_rows else 0
 
-        if impl_data_rows == duckdb_rows:
-            print(f"  Q{qid}: OK ({impl_data_rows} rows, DuckDB {time_ms:.1f}ms)")
-            results_detail[qid] = {"correct": True, "rows": impl_data_rows}
-        else:
+        if impl_data_rows != duckdb_rows:
             print(f"  Q{qid}: FAIL - got {impl_data_rows} rows, expected {duckdb_rows}")
             all_correct = False
             results_detail[qid] = {
                 "correct": False,
                 "got_rows": impl_data_rows,
                 "expected_rows": duckdb_rows,
+            }
+            continue
+
+        golden_rows = []
+        for _, row in duckdb_result.iterrows():
+            golden_rows.append([
+                "" if (v is None or (isinstance(v, float) and v != v) or str(v) == "None") else str(v)
+                for v in row
+            ])
+        impl_data = impl_rows[1:]
+
+        golden_sorted = sorted(golden_rows)
+        impl_sorted = sorted(impl_data)
+
+        mismatches = 0
+        for ri, (grow, irow) in enumerate(zip(golden_sorted, impl_sorted)):
+            if not _values_match(grow, irow):
+                mismatches += 1
+                if mismatches <= 3:
+                    print(f"    Q{qid} row {ri}: expected={grow} got={irow}")
+
+        if mismatches == 0:
+            print(f"  Q{qid}: OK ({impl_data_rows} rows, DuckDB {time_ms:.1f}ms)")
+            results_detail[qid] = {"correct": True, "rows": impl_data_rows}
+        else:
+            print(f"  Q{qid}: FAIL - {mismatches}/{duckdb_rows} rows differ")
+            all_correct = False
+            results_detail[qid] = {
+                "correct": False,
+                "mismatches": mismatches,
+                "total_rows": duckdb_rows,
             }
 
     status = "ALL CORRECT" if all_correct else "SOME FAILURES"

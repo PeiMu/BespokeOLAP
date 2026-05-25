@@ -125,7 +125,7 @@ def compare_results():
             continue
 
         golden_rows = _read_csv_sorted(golden_path)
-        bespoke_rows = _read_csv_sorted(bespoke_path, escapechar="\\")
+        bespoke_rows = _read_csv_sorted(bespoke_path)
 
         if len(golden_rows) != len(bespoke_rows):
             results.append((qname, "FAIL", f"row count: golden={len(golden_rows)} bespoke={len(bespoke_rows)}"))
