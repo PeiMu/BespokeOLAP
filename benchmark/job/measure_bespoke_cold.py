@@ -154,7 +154,7 @@ def force_recompile(build_dir):
         ["pkg-config", "--libs", "arrow", "parquet"], text=True).strip()
 
     cxx = os.environ.get("CXX", "g++")
-    cxxflags = f"-g -std=c++20 -fPIC -O3 -flto -I{job_src} -I{api_dir}"
+    cxxflags = f"-g -std=c++20 -fPIC -O3 -flto -march=native -I{job_src} -I{api_dir}"
     ldflags_so = "-shared -Wl,--build-id=sha1"
     obj_dir = build_dir / "obj"
 

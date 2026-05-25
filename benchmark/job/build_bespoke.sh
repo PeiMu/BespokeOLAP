@@ -14,7 +14,7 @@ CXX="${CXX:-g++}"
 PKG_CFLAGS=$(pkg-config --cflags arrow parquet)
 PKG_LIBS=$(pkg-config --libs arrow parquet)
 
-CXXFLAGS="-g -std=c++20 -fPIC -O3 -flto -I$JOB_SRC -I$API_DIR"
+CXXFLAGS="-g -std=c++20 -fPIC -O3 -flto -march=native -I$JOB_SRC -I$API_DIR"
 LDFLAGS_SO="-shared -Wl,--build-id=sha1"
 
 echo "Building Bespoke JOB engine..."
